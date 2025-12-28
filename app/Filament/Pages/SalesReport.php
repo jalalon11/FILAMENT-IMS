@@ -39,6 +39,17 @@ class SalesReport extends Page implements HasForms, HasTable
         $this->applyPreset('this_month');
     }
 
+    public function updated($property): void
+    {
+        if ($property === 'preset') {
+            $this->applyPreset($this->preset);
+        }
+
+        if (in_array($property, ['date_from', 'date_to', 'preset'])) {
+            $this->resetTable();
+        }
+    }
+
     public function form(Form $form): Form
     {
         return $form
@@ -81,14 +92,17 @@ class SalesReport extends Page implements HasForms, HasTable
 
         match ($preset) {
             'today' => [$this->date_from, $this->date_to] = [$today->toDateString(), $today->toDateString()],
-            'yesterday' => [$this->date_from, $this->date_to] = [$today->subDay()->toDateString(), $today->toDateString()],
-            'this_week' => [$this->date_from, $this->date_to] = [$today->startOfWeek()->toDateString(), Carbon::today()->endOfWeek()->toDateString()],
-            'last_week' => [$this->date_from, $this->date_to] = [$today->subWeek()->startOfWeek()->toDateString(), Carbon::today()->subWeek()->endOfWeek()->toDateString()],
-            'this_month' => [$this->date_from, $this->date_to] = [Carbon::today()->startOfMonth()->toDateString(), Carbon::today()->endOfMonth()->toDateString()],
-            'last_month' => [$this->date_from, $this->date_to] = [Carbon::today()->subMonth()->startOfMonth()->toDateString(), Carbon::today()->subMonth()->endOfMonth()->toDateString()],
-            'this_year' => [$this->date_from, $this->date_to] = [Carbon::today()->startOfYear()->toDateString(), Carbon::today()->endOfYear()->toDateString()],
+            'yesterday' => [$this->date_from, $this->date_to] = [$today->copy()->subDay()->toDateString(), $today->copy()->subDay()->toDateString()],
+            'this_week' => [$this->date_from, $this->date_to] = [$today->copy()->startOfWeek()->toDateString(), $today->copy()->endOfWeek()->toDateString()],
+            'last_week' => [$this->date_from, $this->date_to] = [$today->copy()->subWeek()->startOfWeek()->toDateString(), $today->copy()->subWeek()->endOfWeek()->toDateString()],
+            'this_month' => [$this->date_from, $this->date_to] = [$today->copy()->startOfMonth()->toDateString(), $today->copy()->endOfMonth()->toDateString()],
+            'last_month' => [$this->date_from, $this->date_to] = [$today->copy()->subMonth()->startOfMonth()->toDateString(), $today->copy()->subMonth()->endOfMonth()->toDateString()],
+            'this_year' => [$this->date_from, $this->date_to] = [$today->copy()->startOfYear()->toDateString(), $today->copy()->endOfYear()->toDateString()],
             default => null,
         };
+
+        // Reset the table to refresh with new dates
+        $this->resetTable();
     }
 
     public function table(Table $table): Table

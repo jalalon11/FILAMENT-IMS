@@ -141,6 +141,49 @@ class BulkTransaction extends Page implements HasForms
                                         $price = (float) ($get('unit_price') ?? 0);
                                         $set('total', number_format($qty * $price, 2, '.', ''));
                                     })
+                                    ->rules([
+                                        function (Get $get) {
+                                            return function (string $attribute, $value, $fail) use ($get) {
+                                                $type = $get('../../type');
+                                                if ($type === 'out') {
+                                                    $productId = $get('product_id');
+                                                    if ($productId) {
+                                                        $product = Product::find($productId);
+                                                        if ($product && $value > $product->quantity) {
+                                                            $fail("Insufficient stock! Available: {$product->quantity} {$product->unit_of_measure}");
+                                                        }
+                                                    }
+                                                }
+                                            };
+                                        },
+                                    ])
+                                    ->helperText(function (Get $get) {
+                                        $productId = $get('product_id');
+                                        $quantity = (int) ($get('quantity') ?? 1);
+                                        $type = $get('../../type');
+
+                                        if ($productId) {
+                                            $product = Product::find($productId);
+                                            if ($product) {
+                                                $currentStock = $product->quantity;
+                                                $unit = $product->unit_of_measure;
+
+                                                if ($currentStock <= 0 && $type === 'out') {
+                                                    return "⚠️ OUT OF STOCK! Current: 0 {$unit}";
+                                                }
+
+                                                if ($type === 'out') {
+                                                    $newStock = $currentStock - $quantity;
+                                                    $status = $newStock < 0 ? " ⚠️ INSUFFICIENT!" : "";
+                                                    return "Stock: {$currentStock} → {$newStock} {$unit}{$status}";
+                                                } else {
+                                                    $newStock = $currentStock + $quantity;
+                                                    return "Stock: {$currentStock} → {$newStock} {$unit}";
+                                                }
+                                            }
+                                        }
+                                        return null;
+                                    })
                                     ->columnSpan(1),
                                 // Forms\Components\TextInput::make('unit_of_measure')
                                 //     ->label('Unit')
