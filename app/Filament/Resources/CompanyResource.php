@@ -63,8 +63,13 @@ class CompanyResource extends Resource
                 //
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->modalWidth('lg'),
                 Tables\Actions\DeleteAction::make(),
+            ])
+            ->headerActions([
+                Tables\Actions\CreateAction::make()
+                    ->modalWidth('lg'),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -87,8 +92,6 @@ class CompanyResource extends Resource
     {
         return [
             'index' => Pages\ListCompanies::route('/'),
-            'create' => Pages\CreateCompany::route('/create'),
-            'edit' => Pages\EditCompany::route('/{record}/edit'),
         ];
     }
 }

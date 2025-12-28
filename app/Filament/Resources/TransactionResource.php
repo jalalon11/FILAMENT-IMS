@@ -22,7 +22,7 @@ class TransactionResource extends Resource
 
     protected static ?string $navigationGroup = 'Inventory';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 0;
 
     protected static ?string $navigationLabel = 'Stock Transactions';
 
@@ -242,8 +242,152 @@ class TransactionResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                    ->modalWidth('7xl'),
                 Tables\Actions\DeleteAction::make(),
+            ])
+            ->headerActions([
+                Tables\Actions\Action::make('create')
+                    ->label('New Transaction')
+                    ->icon('heroicon-o-plus')
+                    ->modalWidth('7xl')
+                    ->modalHeading('New Transaction')
+                    ->form([
+                        Forms\Components\ToggleButtons::make('type')
+                            ->options([
+                                'in' => 'Stock In (Receiving)',
+                                'out' => 'Stock Out (Selling)',
+                            ])
+                            ->icons([
+                                'in' => 'heroicon-o-arrow-down-tray',
+                                'out' => 'heroicon-o-arrow-up-tray',
+                            ])
+                            ->colors([
+                                'in' => 'success',
+                                'out' => 'danger',
+                            ])
+                            ->required()
+                            ->inline()
+                            ->default('out')
+                            ->live()
+                            ->afterStateUpdated(function (Get $get, Set $set, ?string $state) {
+                                $items = $get('items') ?? [];
+                                $updatedItems = [];
+                                foreach ($items as $key => $item) {
+                                    if (!empty($item['product_id'])) {
+                                        $product = Product::find($item['product_id']);
+                                        if ($product) {
+                                            $newPrice = $state === 'out' ? $product->selling_price : $product->cost_price;
+                                            $item['unit_price'] = $newPrice;
+                                            $qty = (float) ($item['quantity'] ?? 1);
+                                            $item['total'] = number_format($qty * $newPrice, 2, '.', '');
+                                        }
+                                    }
+                                    $updatedItems[$key] = $item;
+                                }
+                                $set('items', $updatedItems);
+                            }),
+                        Forms\Components\DatePicker::make('transaction_date')
+                            ->default(now())
+                            ->required()
+                            ->columnSpan(1),
+                        Forms\Components\TextInput::make('reference_number')
+                            ->placeholder('Reference #')
+                            ->columnSpan(1),
+                        Forms\Components\Repeater::make('items')
+                            ->schema([
+                                Forms\Components\Select::make('product_id')
+                                    ->label('Product')
+                                    ->options(Product::pluck('product_name', 'id'))
+                                    ->searchable()
+                                    ->required()
+                                    ->live()
+                                    ->afterStateUpdated(function (Get $get, Set $set, ?string $state) {
+                                        if ($state) {
+                                            $product = Product::find($state);
+                                            if ($product) {
+                                                $type = $get('../../type');
+                                                $price = $type === 'out' ? $product->selling_price : $product->cost_price;
+                                                $set('unit_price', $price);
+                                                $qty = (float) ($get('quantity') ?? 1);
+                                                $set('total', number_format($qty * $price, 2, '.', ''));
+                                            }
+                                        }
+                                    })
+                                    ->columnSpan(3),
+                                Forms\Components\TextInput::make('quantity')
+                                    ->numeric()
+                                    ->default(1)
+                                    ->minValue(1)
+                                    ->required()
+                                    ->live(debounce: 300)
+                                    ->afterStateUpdated(function (Get $get, Set $set) {
+                                        $qty = (float) ($get('quantity') ?? 0);
+                                        $price = (float) ($get('unit_price') ?? 0);
+                                        $set('total', number_format($qty * $price, 2, '.', ''));
+                                    })
+                                    ->columnSpan(2),
+                                Forms\Components\TextInput::make('unit_price')
+                                    ->numeric()
+                                    ->prefix('₱')
+                                    ->required()
+                                    ->live(debounce: 300)
+                                    ->afterStateUpdated(function (Get $get, Set $set) {
+                                        $qty = (float) ($get('quantity') ?? 0);
+                                        $price = (float) ($get('unit_price') ?? 0);
+                                        $set('total', number_format($qty * $price, 2, '.', ''));
+                                    })
+                                    ->columnSpan(2),
+                                Forms\Components\TextInput::make('total')
+                                    ->prefix('₱')
+                                    ->disabled()
+                                    ->dehydrated()
+                                    ->columnSpan(2),
+                            ])
+                            ->columns(9)
+                            ->addActionLabel('Add Product')
+                            ->minItems(1)
+                            ->defaultItems(1)
+                            ->columnSpanFull(),
+                    ])
+                    ->action(function (array $data) {
+                        // Validate stock for out transactions
+                        if ($data['type'] === 'out') {
+                            foreach ($data['items'] as $item) {
+                                if (empty($item['product_id']))
+                                    continue;
+                                $product = Product::find($item['product_id']);
+                                if ($product && $item['quantity'] > $product->quantity) {
+                                    \Filament\Notifications\Notification::make()
+                                        ->title('Insufficient Stock')
+                                        ->body("Not enough stock for {$product->product_name}. Available: {$product->quantity}")
+                                        ->danger()
+                                        ->send();
+                                    return;
+                                }
+                            }
+                        }
+
+                        // Create transactions
+                        foreach ($data['items'] as $item) {
+                            if (empty($item['product_id']))
+                                continue;
+                            Transaction::create([
+                                'product_id' => $item['product_id'],
+                                'type' => $data['type'],
+                                'quantity' => $item['quantity'],
+                                'unit_price' => $item['unit_price'],
+                                'total_amount' => $item['quantity'] * $item['unit_price'],
+                                'reference_number' => $data['reference_number'] ?? null,
+                                'transaction_date' => $data['transaction_date'],
+                            ]);
+                        }
+
+                        \Filament\Notifications\Notification::make()
+                            ->title('Transaction Saved!')
+                            ->success()
+                            ->send();
+                    }),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -267,9 +411,7 @@ class TransactionResource extends Resource
     {
         return [
             'index' => Pages\ListTransactions::route('/'),
-            'create' => Pages\CreateTransaction::route('/create'),
             'view' => Pages\ViewTransaction::route('/{record}'),
-            'edit' => Pages\EditTransaction::route('/{record}/edit'),
         ];
     }
 }
